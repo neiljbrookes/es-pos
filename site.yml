@@ -1,0 +1,94 @@
+---
+- name: "Build the environment"
+  hosts: localhost
+  connection: local
+  gather_facts: False
+
+  tasks:
+    - name: Create a keypair
+      local_action:
+        module: rax_keypair
+        credentials: "{{ rax_credentials_file }}"
+        name: "{{ rax_sshkeyname }}"
+        public_key: "{{ lookup('file', rax_sshkeyfile) }}"
+        region: "{{ rax_region }}"
+      when: rax_sshkeyname and rax_sshkeyfile and rax_cloud_build|bool
+
+    - name : "Create Local Net"
+      local_action:
+        module: rax_network
+        credentials: ~/.raxpub
+        label: esnet
+        cidr: 192.168.15.0/24
+        region: LON
+        state: present
+
+    - name: "Create ES host(s)"
+      local_action:
+        module: rax
+        credentials: "{{ rax_credentials_file }}"
+        name: "{{ rax_es_fqdn }}"
+        image: "{{ rax_es_image }}"
+        flavor: "{{ rax_es_flavor }}"
+        region: "{{ rax_region }}"
+        key_name: "{{ rax_sshkeyname }}"
+        exact_count: yes
+        count: 1 
+        auto_increment: True
+        group: es-servers
+        state: present
+        wait: true
+        wait_timeout: 900
+        networks:
+          - public
+          - private
+          - esnet
+      register: es
+      when: rax_cloud_build
+
+    - name: "Add the cloud server to the ES variable group"
+      local_action:
+        module: add_host
+        hostname: "{{ item.name }}"
+        servicenet_ip: "{{ item.rax_addresses.private[0].addr }}"
+        esnet_ip: "{{ item.rax_addresses.esnet[0].addr }}"
+        ansible_ssh_host: "{{ item.rax_accessipv4 }}"
+        ansible_ssh_user: root
+        groupname: es-servers
+      with_items: es.success
+      when: rax_cloud_build
+
+    - name: "Add the cloud server to the logstash-source varialbe group"
+      local_action:
+        module: add_host
+        hostname: "{{ item.name }}"
+        servicenet_ip: "{{ item.rax_addresses.private[0].addr }}"
+        esnet_ip: "{{ item.rax_addresses.esnet[0].addr }}"
+        ansible_ssh_host: "{{ item.rax_accessipv4 }}"
+        ansible_ssh_user: root
+        groupname: logstash-source
+      with_items: es.instances
+      when: rax_cloud_build
+
+#    - name: "Add the cloud server to the logstash-server varialbe group"
+#      local_action:
+#        module: add_host
+#        hostname: "{{ item.name }}"
+#        servicenet_ip: "{{ item.rax_addresses.private[0].addr }}"
+#        esnet_ip: "{{ item.rax_addresses.esnet[0].addr }}"
+#        ansible_ssh_host: "{{ item.rax_accessipv4 }}"
+#        ansible_ssh_user: root
+#        groupname: logstash-server
+#      with_items: logstash.instances
+#      when: rax_cloud_build
+
+
+- name: "Show debug info"
+  hosts: localhost
+  connection: local
+  gather_facts: False
+  tasks:
+    - name: "ES Servers info"
+      debug: var=hostvars[item]
+      with_items: groups['es-servers']
+      #with_items: groups['LON']
