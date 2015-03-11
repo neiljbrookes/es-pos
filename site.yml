@@ -3,6 +3,7 @@
   hosts: localhost
   connection: local
   gather_facts: False
+  
 
   tasks:
     - name: Create a keypair
@@ -14,7 +15,7 @@
         region: "{{ rax_region }}"
       when: rax_sshkeyname and rax_sshkeyfile and rax_cloud_build|bool
 
-    - name : "Create Local Net"
+    - name : "Create Local Net for ElasticSearch"
       local_action:
         module: rax_network
         credentials: ~/.raxpub
@@ -33,12 +34,12 @@
         region: "{{ rax_region }}"
         key_name: "{{ rax_sshkeyname }}"
         exact_count: yes
-        count: 1 
+        count: 3 
         auto_increment: True
-        group: es-servers
+        group: es-server
         state: present
         wait: true
-        wait_timeout: 900
+#        wait_timeout: 900
         networks:
           - public
           - private
@@ -54,7 +55,7 @@
         esnet_ip: "{{ item.rax_addresses.esnet[0].addr }}"
         ansible_ssh_host: "{{ item.rax_accessipv4 }}"
         ansible_ssh_user: root
-        groupname: es-servers
+        groupname: es-server
       with_items: es.success
       when: rax_cloud_build
 
@@ -82,13 +83,21 @@
 #      with_items: logstash.instances
 #      when: rax_cloud_build
 
+- name : "Apply roles for ES-Servers"
+  hosts: es-server
+  vars_files:
+    - defaults/main.yml
+  handlers: 
+    - include: handlers/main.yml
+  roles:
+    - es-server
 
-- name: "Show debug info"
-  hosts: localhost
-  connection: local
-  gather_facts: False
-  tasks:
-    - name: "ES Servers info"
-      debug: var=hostvars[item]
-      with_items: groups['es-servers']
-      #with_items: groups['LON']
+#- name: "Show debug info"
+#  hosts: localhost
+#  connection: local
+#  gather_facts: False
+#  tasks:
+#    - name: "ES Servers info"
+#      debug: var=hostvars[item]
+#      with_items: groups['es-server']
+#      #with_items: groups['LON']
